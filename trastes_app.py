@@ -117,17 +117,20 @@ def index():
     df = pd.DataFrame(records)
 
     # --- Pie chart using all data ---
+    # --- Generate pie charts per activity ---
+    charts = []
     if not df.empty:
-        counts = df.groupby("persoon").size()
-        plt.figure(figsize=(5,5))
-        plt.pie(counts, labels=counts.index, autopct="%1.1f%%", startangle=90)
-        plt.title("Percentage per persoon")
-        buf = BytesIO()
-        plt.savefig(buf, format="png", bbox_inches="tight", transparent=True)
-        plt.close()
-        pie_chart = base64.b64encode(buf.getvalue()).decode("utf-8")
-    else:
-        pie_chart = ""
+        for activiteit in df['activiteit'].unique():
+            subset = df[df['activiteit'] == activiteit]
+            counts = subset['persoon'].value_counts()
+            plt.figure(figsize=(4,4))
+            plt.pie(counts, labels=counts.index, autopct='%1.1f%%', startangle=90, colors=plt.cm.Set3.colors)
+            plt.title(activiteit)
+            buf = BytesIO()
+            plt.savefig(buf, format='png', bbox_inches='tight')
+            plt.close()
+            buf.seek(0)
+            charts.append(base64.b64encode(buf.read()).decode('utf-8'))
 
     # --- Only show last 5 rows in table ---
     df_table = df.tail(5)
