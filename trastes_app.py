@@ -124,6 +124,7 @@ def index():
 
     records = SHEET.get_all_records()
     df = pd.DataFrame(records)
+    df = df.tail(5)  # Only show the last 50 entries
 
     # --- Generate pie charts per activity ---
     graphs = {}
