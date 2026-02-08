@@ -1,13 +1,14 @@
 from flask import Flask, request, render_template_string, redirect, url_for
 import pandas as pd
 from datetime import datetime
+from zoneinfo import ZoneInfo
 import gspread
 from google.oauth2.service_account import Credentials
 import os
 import json
-import matplotlib.pyplot as plt
-import io
 import base64
+import matplotlib.pyplot as plt
+from io import BytesIO
 
 app = Flask(__name__)
 
@@ -41,7 +42,6 @@ HTML = """
         table{margin:auto;border-collapse:collapse;width:90%;}
         th,td{border:1px solid #333;padding:8px;}
         th{background-color:#1f1f1f;}
-        img {margin: 20px 0; max-width: 80%;}
     </style>
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
 </head>
@@ -51,24 +51,24 @@ HTML = """
 
 <form method="POST" onsubmit="confettiStart()">
     <select name="activiteit" required>
-        <option value="">📝 Kies een activiteit</option>
-        <option value="Afwas gedaan">🧼 Ik heb de afwas gedaan</option>
+        <option value="">Kies een activiteit</option>
+        <option value="Afwas gedaan">🍽 Ik heb de afwas gedaan</option>
         <option value="Afgedroogd">Ik heb afgedroogd</option>
         <option value="Gekookt">🍳 Ik heb gekookt</option>
     </select>
 
     <select name="persoon" required>
-        <option value="">👤 Wie?</option>
+        <option value="">Wie?</option>
         <option value="Monze">Monze</option>
         <option value="Nelson">Nelson</option>
-        <option value="Samen">🤝 Samen</option>
+        <option value="🤝 Samen">Samen</option>
     </select>
 
     <br>
     <button type="submit">Opslaan</button>
 </form>
 
-<h2>Logboek</h2>
+<h2>Laatste 5 Logboekregels</h2>
 <table>
 <tr>
     <th>Activiteit</th>
@@ -76,7 +76,7 @@ HTML = """
     <th>Datum</th>
     <th>Tijd</th>
 </tr>
-{% for _, rij in data.iterrows() %}
+{% for _, rij in data_table.iterrows() %}
 <tr>
     <td>{{ rij.activiteit }}</td>
     <td>{{ rij.persoon }}</td>
@@ -86,11 +86,8 @@ HTML = """
 {% endfor %}
 </table>
 
-<h2>Percentage grafieken per activiteit</h2>
-{% for activiteit, img in graphs.items() %}
-<h3>{{ activiteit }}</h3>
-<img src="data:image/png;base64,{{ img }}" alt="{{ activiteit }}">
-{% endfor %}
+<h2>Percentage per persoon per activiteit</h2>
+<img src="data:image/png;base64,{{ pie_chart }}" alt="Pie chart">
 
 <script>
 function confettiStart() {
@@ -102,42 +99,40 @@ function confettiStart() {
 </html>
 """
 
-# --- Helper function to convert Matplotlib figure to base64 ---
-def plot_to_base64(fig):
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", bbox_inches='tight', facecolor='#121212')
-    buf.seek(0)
-    img_base64 = base64.b64encode(buf.read()).decode('utf-8')
-    plt.close(fig)
-    return img_base64
-
 @app.route("/", methods=["GET", "POST"])
 def index():
     if request.method == "POST":
         activiteit = request.form["activiteit"]
         persoon = request.form["persoon"]
-        nu = datetime.now()
+        # Amsterdam time
+        nu = datetime.now(ZoneInfo("Europe/Amsterdam"))
         datum = nu.strftime("%Y-%m-%d")
         tijd = nu.strftime("%H:%M:%S")
+
         SHEET.append_row([activiteit, persoon, datum, tijd])
         return redirect(url_for("index"))
 
+    # Read all data from Google Sheets
     records = SHEET.get_all_records()
     df = pd.DataFrame(records)
-    df = df.tail(5)  # Only show the last 50 entries
 
-    # --- Generate pie charts per activity ---
-    graphs = {}
+    # --- Pie chart using all data ---
     if not df.empty:
-        for activiteit in df['activiteit'].unique():
-            df_activity = df[df['activiteit'] == activiteit]
-            counts = df_activity['persoon'].value_counts()
-            fig, ax = plt.subplots()
-            ax.pie(counts, labels=counts.index, autopct='%1.1f%%', colors=['#00FFFF','#FF00FF','#FFFF00'], textprops={'color':'white'})
-            ax.set_title(f"{activiteit} - percentage per persoon", color='white')
-            graphs[activiteit] = plot_to_base64(fig)
+        counts = df.groupby("persoon").size()
+        plt.figure(figsize=(5,5))
+        plt.pie(counts, labels=counts.index, autopct="%1.1f%%", startangle=90)
+        plt.title("Percentage per persoon")
+        buf = BytesIO()
+        plt.savefig(buf, format="png", bbox_inches="tight", transparent=True)
+        plt.close()
+        pie_chart = base64.b64encode(buf.getvalue()).decode("utf-8")
+    else:
+        pie_chart = ""
 
-    return render_template_string(HTML, data=df, graphs=graphs)
+    # --- Only show last 5 rows in table ---
+    df_table = df.tail(5)
+
+    return render_template_string(HTML, data_table=df_table, pie_chart=pie_chart)
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
