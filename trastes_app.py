@@ -116,8 +116,7 @@ def index():
     records = SHEET.get_all_records()
     df = pd.DataFrame(records)
 
-    # --- Pie chart using all data ---
-    # --- Generate pie charts per activity ---
+  # --- Generate pie charts per activity ---
     charts = []
     if not df.empty:
         for activiteit in df['activiteit'].unique():
@@ -127,15 +126,12 @@ def index():
             plt.pie(counts, labels=counts.index, autopct='%1.1f%%', startangle=90, colors=plt.cm.Set3.colors)
             plt.title(activiteit)
             buf = BytesIO()
-            plt.savefig(buf, format='png', bbox_inches='tight')
+            plt.savefig(buf, format='png', bbox_inches='tight', transparent=True)
             plt.close()
             buf.seek(0)
-            charts.append(base64.b64encode(buf.read()).decode('utf-8'))
+            charts.append((base64.b64encode(buf.read()).decode('utf-8'), activiteit))
 
-    # --- Only show last 5 rows in table ---
-    df_table = df.tail(5)
-
-    return render_template_string(HTML, data_table=df_table, pie_chart=pie_chart)
+    return render_template_string(HTML, data_table=df_table, charts=charts)
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
