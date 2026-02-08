@@ -5,11 +5,9 @@ import gspread
 from google.oauth2.service_account import Credentials
 import os
 import json
-import matplotlib
-matplotlib.use('Agg')  # Evita necesidad de GUI en servidor
 import matplotlib.pyplot as plt
+import io
 import base64
-from io import BytesIO
 
 app = Flask(__name__)
 
@@ -26,7 +24,6 @@ SCOPE = [
 CREDS = Credentials.from_service_account_info(creds_dict, scopes=SCOPE)
 CLIENT = gspread.authorize(CREDS)
 
-# Use your Sheet ID
 SHEET_ID = "1OCs9FrtgBBpgNjUNYEIPQkIXe-vH54mJtjk5gYV9iFo"
 SHEET = CLIENT.open_by_key(SHEET_ID).sheet1
 
@@ -41,10 +38,10 @@ HTML = """
         body {background-color:#121212; color:#e0e0e0; font-family:Arial,sans-serif; text-align:center; padding:20px;}
         select,button {padding:10px;margin:8px;font-size:16px;background-color:#1e1e1e;color:white;border:1px solid #333;border-radius:5px;}
         button{cursor:pointer;}
-        table{margin:auto;border-collapse:collapse;width:90%; margin-top:20px;}
+        table{margin:auto;border-collapse:collapse;width:90%;}
         th,td{border:1px solid #333;padding:8px;}
         th{background-color:#1f1f1f;}
-        .chart {margin: 20px auto;}
+        img {margin: 20px 0; max-width: 80%;}
     </style>
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
 </head>
@@ -56,14 +53,14 @@ HTML = """
     <select name="activiteit" required>
         <option value="">📝 Kies een activiteit</option>
         <option value="Afwas gedaan">🧼 Ik heb de afwas gedaan</option>
-        <option value="Afgedroogd"> Ik heb afgedroogd</option>
+        <option value="Afgedroogd">Ik heb afgedroogd</option>
         <option value="Gekookt">🍳 Ik heb gekookt</option>
     </select>
 
     <select name="persoon" required>
         <option value="">👤 Wie?</option>
-        <option value="Monze"> Monze</option>
-        <option value="Nelson"> Nelson</option>
+        <option value="Monze">Monze</option>
+        <option value="Nelson">Nelson</option>
         <option value="Samen">🤝 Samen</option>
     </select>
 
@@ -72,7 +69,6 @@ HTML = """
 </form>
 
 <h2>Logboek</h2>
-
 <table>
 <tr>
     <th>Activiteit</th>
@@ -90,11 +86,10 @@ HTML = """
 {% endfor %}
 </table>
 
-<h2>Percentage per persoon per activiteit</h2>
-{% for chart in charts %}
-    <div class="chart">
-        <img src="data:image/png;base64,{{ chart }}" width="400">
-    </div>
+<h2>Percentage grafieken per activiteit</h2>
+{% for activiteit, img in graphs.items() %}
+<h3>{{ activiteit }}</h3>
+<img src="data:image/png;base64,{{ img }}" alt="{{ activiteit }}">
 {% endfor %}
 
 <script>
@@ -106,6 +101,15 @@ function confettiStart() {
 </body>
 </html>
 """
+
+# --- Helper function to convert Matplotlib figure to base64 ---
+def plot_to_base64(fig):
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", bbox_inches='tight', facecolor='#121212')
+    buf.seek(0)
+    img_base64 = base64.b64encode(buf.read()).decode('utf-8')
+    plt.close(fig)
+    return img_base64
 
 @app.route("/", methods=["GET", "POST"])
 def index():
@@ -122,21 +126,17 @@ def index():
     df = pd.DataFrame(records)
 
     # --- Generate pie charts per activity ---
-    charts = []
+    graphs = {}
     if not df.empty:
         for activiteit in df['activiteit'].unique():
-            subset = df[df['activiteit'] == activiteit]
-            counts = subset['persoon'].value_counts()
-            plt.figure(figsize=(4,4))
-            plt.pie(counts, labels=counts.index, autopct='%1.1f%%', startangle=90, colors=plt.cm.Set3.colors)
-            plt.title(activiteit)
-            buf = BytesIO()
-            plt.savefig(buf, format='png', bbox_inches='tight')
-            plt.close()
-            buf.seek(0)
-            charts.append(base64.b64encode(buf.read()).decode('utf-8'))
+            df_activity = df[df['activiteit'] == activiteit]
+            counts = df_activity['persoon'].value_counts()
+            fig, ax = plt.subplots()
+            ax.pie(counts, labels=counts.index, autopct='%1.1f%%', colors=['#00FFFF','#FF00FF','#FFFF00'], textprops={'color':'white'})
+            ax.set_title(f"{activiteit} - percentage per persoon", color='white')
+            graphs[activiteit] = plot_to_base64(fig)
 
-    return render_template_string(HTML, data=df, charts=charts)
+    return render_template_string(HTML, data=df, graphs=graphs)
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
