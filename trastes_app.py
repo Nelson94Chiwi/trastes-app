@@ -3,19 +3,30 @@ import pandas as pd
 from datetime import datetime
 import gspread
 from google.oauth2.service_account import Credentials
+import os
+import json
 
 app = Flask(__name__)
 
-# --- Google Sheets setup ---
+# --- Google Sheets setup using environment variable ---
+# Make sure you set a Render secret named GOOGLE_CREDENTIALS containing the JSON content of your service account
+creds_json = os.environ.get("GOOGLE_CREDENTIALS")
+if not creds_json:
+    raise Exception("Environment variable GOOGLE_CREDENTIALS not found!")
+
+creds_dict = json.loads(creds_json)
 SCOPE = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive"
 ]
-CREDS = Credentials.from_service_account_file("credentials.json", scopes=SCOPE)
+CREDS = Credentials.from_service_account_info(creds_dict, scopes=SCOPE)
 CLIENT = gspread.authorize(CREDS)
-SHEET = CLIENT.open("Huishoud Log").sheet1  # Your sheet name
 
-# --- HTML template (same as before) ---
+# Use your Sheet ID (safer than using the sheet name)
+SHEET_ID = "YOUR_SHEET_ID_HERE"  # Replace this with your actual Google Sheet ID
+SHEET = CLIENT.open_by_key(SHEET_ID).sheet1
+
+# --- HTML template ---
 HTML = """
 <!DOCTYPE html>
 <html lang="nl">
@@ -105,6 +116,5 @@ def index():
     return render_template_string(HTML, data=df)
 
 if __name__ == "__main__":
-    import os
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
