@@ -5,11 +5,13 @@ import gspread
 from google.oauth2.service_account import Credentials
 import os
 import json
+import matplotlib.pyplot as plt
+import io
+import base64
 
 app = Flask(__name__)
 
 # --- Google Sheets setup using environment variable ---
-# Make sure you set a Render secret named GOOGLE_CREDENTIALS containing the JSON content of your service account
 creds_json = os.environ.get("GOOGLE_CREDENTIALS")
 if not creds_json:
     raise Exception("Environment variable GOOGLE_CREDENTIALS not found!")
@@ -22,8 +24,7 @@ SCOPE = [
 CREDS = Credentials.from_service_account_info(creds_dict, scopes=SCOPE)
 CLIENT = gspread.authorize(CREDS)
 
-# Use your Sheet ID (safer than using the sheet name)
-SHEET_ID = "1OCs9FrtgBBpgNjUNYEIPQkIXe-vH54mJtjk5gYV9iFo"  # Replace this with your actual Google Sheet ID
+SHEET_ID = "1OCs9FrtgBBpgNjUNYEIPQkIXe-vH54mJtjk5gYV9iFo"
 SHEET = CLIENT.open_by_key(SHEET_ID).sheet1
 
 # --- HTML template ---
@@ -40,6 +41,7 @@ HTML = """
         table{margin:auto;border-collapse:collapse;width:90%;}
         th,td{border:1px solid #333;padding:8px;}
         th{background-color:#1f1f1f;}
+        img {margin: 20px 0; max-width: 80%;}
     </style>
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
 </head>
@@ -67,7 +69,6 @@ HTML = """
 </form>
 
 <h2>Logboek</h2>
-
 <table>
 <tr>
     <th>Activiteit</th>
@@ -85,6 +86,12 @@ HTML = """
 {% endfor %}
 </table>
 
+<h2>Percentage grafieken per activiteit</h2>
+{% for activiteit, img in graphs.items() %}
+<h3>{{ activiteit }}</h3>
+<img src="data:image/png;base64,{{ img }}" alt="{{ activiteit }}">
+{% endfor %}
+
 <script>
 function confettiStart() {
     confetti({particleCount:150,spread:80,origin:{y:0.6}});
@@ -95,6 +102,15 @@ function confettiStart() {
 </html>
 """
 
+# --- Helper function to convert Matplotlib figure to base64 ---
+def plot_to_base64(fig):
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", bbox_inches='tight', facecolor='#121212')
+    buf.seek(0)
+    img_base64 = base64.b64encode(buf.read()).decode('utf-8')
+    plt.close(fig)
+    return img_base64
+
 @app.route("/", methods=["GET", "POST"])
 def index():
     if request.method == "POST":
@@ -103,17 +119,24 @@ def index():
         nu = datetime.now()
         datum = nu.strftime("%Y-%m-%d")
         tijd = nu.strftime("%H:%M:%S")
-
-        # --- Append new row to Google Sheets ---
         SHEET.append_row([activiteit, persoon, datum, tijd])
-
         return redirect(url_for("index"))
 
-    # --- Read all data from Google Sheets ---
     records = SHEET.get_all_records()
     df = pd.DataFrame(records)
 
-    return render_template_string(HTML, data=df)
+    # --- Generate pie charts per activity ---
+    graphs = {}
+    if not df.empty:
+        for activiteit in df['activiteit'].unique():
+            df_activity = df[df['activiteit'] == activiteit]
+            counts = df_activity['persoon'].value_counts()
+            fig, ax = plt.subplots()
+            ax.pie(counts, labels=counts.index, autopct='%1.1f%%', colors=['#00FFFF','#FF00FF','#FFFF00'], textprops={'color':'white'})
+            ax.set_title(f"{activiteit} - percentage per persoon", color='white')
+            graphs[activiteit] = plot_to_base64(fig)
+
+    return render_template_string(HTML, data=df, graphs=graphs)
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
