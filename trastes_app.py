@@ -23,7 +23,7 @@ CREDS = Credentials.from_service_account_info(creds_dict, scopes=SCOPE)
 CLIENT = gspread.authorize(CREDS)
 
 # Use your Sheet ID (safer than using the sheet name)
-SHEET_ID = "YOUR_SHEET_ID_HERE"  # Replace this with your actual Google Sheet ID
+SHEET_ID = "1OCs9FrtgBBpgNjUNYEIPQkIXe-vH54mJtjk5gYV9iFo"  # Replace this with your actual Google Sheet ID
 SHEET = CLIENT.open_by_key(SHEET_ID).sheet1
 
 # --- HTML template ---
